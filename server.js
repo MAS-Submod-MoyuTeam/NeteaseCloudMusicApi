@@ -116,11 +116,11 @@ async function checkVersion() {
             ? VERSION_CHECK_RESULT.NOT_LATEST
             : VERSION_CHECK_RESULT.LATEST,
         )
+      } else {
+        resolve({
+          status: VERSION_CHECK_RESULT.FAILED,
+        })
       }
-    })
-
-    resolve({
-      status: VERSION_CHECK_RESULT.FAILED,
     })
   })
 }
@@ -136,6 +136,10 @@ async function consturctServer(moduleDefs) {
   const { CORS_ALLOW_ORIGIN } = process.env
   app.set('trust proxy', true)
 
+  /**
+   * Serving static files
+   */
+  app.use(express.static(path.join(__dirname, 'public')))
   /**
    * CORS & Preflight request
    */
@@ -172,15 +176,10 @@ async function consturctServer(moduleDefs) {
   /**
    * Body Parser and File Upload
    */
-  app.use(express.json())
-  app.use(express.urlencoded({ extended: false }))
+  app.use(express.json({ limit: '50mb' }))
+  app.use(express.urlencoded({ extended: false, limit: '50mb' }))
 
   app.use(fileUpload())
-
-  /**
-   * Serving static files
-   */
-  app.use(express.static(path.join(__dirname, 'public')))
 
   /**
    * Cache
@@ -229,6 +228,9 @@ async function consturctServer(moduleDefs) {
           if (ip.substr(0, 7) == '::ffff:') {
             ip = ip.substr(7)
           }
+          if (ip == '::1') {
+            ip = global.cnIp
+          }
           // console.log(ip)
           obj[3] = {
             ...obj[3],
@@ -239,17 +241,19 @@ async function consturctServer(moduleDefs) {
         console.log('[OK]', decode(req.originalUrl))
 
         const cookies = moduleResponse.cookie
-        if (Array.isArray(cookies) && cookies.length > 0) {
-          if (req.protocol === 'https') {
-            // Try to fix CORS SameSite Problem
-            res.append(
-              'Set-Cookie',
-              cookies.map((cookie) => {
-                return cookie + '; SameSite=None; Secure'
-              }),
-            )
-          } else {
-            res.append('Set-Cookie', cookies)
+        if (!query.noCookie) {
+          if (Array.isArray(cookies) && cookies.length > 0) {
+            if (req.protocol === 'https') {
+              // Try to fix CORS SameSite Problem
+              res.append(
+                'Set-Cookie',
+                cookies.map((cookie) => {
+                  return cookie + '; SameSite=None; Secure'
+                }),
+              )
+            } else {
+              res.append('Set-Cookie', cookies)
+            }
           }
         }
         res.status(moduleResponse.status).send(moduleResponse.body)
@@ -268,7 +272,10 @@ async function consturctServer(moduleDefs) {
         }
         if (moduleResponse.body.code == '301')
           moduleResponse.body.msg = '需要登录'
-        res.append('Set-Cookie', moduleResponse.cookie)
+        if (!query.noCookie) {
+          res.append('Set-Cookie', moduleResponse.cookie)
+        }
+
         res.status(moduleResponse.status).send(moduleResponse.body)
       }
     })
